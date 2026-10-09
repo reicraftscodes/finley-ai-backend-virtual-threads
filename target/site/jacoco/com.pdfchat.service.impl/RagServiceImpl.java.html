@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RagServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Owley AI</a> &gt; <a href="index.source.html" class="el_package">com.pdfchat.service.impl</a> &gt; <span class="el_source">RagServiceImpl.java</span></div><h1>RagServiceImpl.java</h1><pre class="source lang-java linenums">package com.pdfchat.service.impl;
+
+import com.pdfchat.constants.PromptConstant;
+import com.pdfchat.model.AskResponse;
+import com.pdfchat.service.RagService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static com.pdfchat.constants.RagConstant.*;
+
+<span class="nc" id="L22">@Slf4j</span>
+@Service
+<span class="nc" id="L24">public class RagServiceImpl implements RagService {</span>
+
+    @Autowired
+    private VectorStore vectorStore;
+
+    @Autowired
+    private ChatClient chatClient;
+
+    @Override
+    public AskResponse ask(String question) {
+
+        // search the vector store for the most relevant document chunks based on the question
+<span class="nc" id="L36">        List&lt;Document&gt; relevantDocs = searchVectorStore(question);</span>
+
+<span class="nc bnc" id="L38" title="All 2 branches missed.">        if (relevantDocs.isEmpty()) {</span>
+<span class="nc" id="L39">            log.warn(NO_DOCS_FOUND, question);</span>
+        }
+
+        // build context and collect sources from retrieved chunks
+<span class="nc" id="L43">        String context = buildContext(relevantDocs);</span>
+
+        // send the context and question to OpenAI and get the answer
+<span class="nc" id="L46">        String answer = callChatModel(context, question);</span>
+
+        // return the answer along with sources and a success status
+<span class="nc" id="L49">        return AskResponse.builder()</span>
+<span class="nc" id="L50">                .outputText(answer)</span>
+<span class="nc" id="L51">                .result(true)</span>
+<span class="nc" id="L52">                .resultMessage(RESULT_SUCCESS)</span>
+<span class="nc" id="L53">                .build();</span>
+    }
+
+    // search Pinecone for the most relevant chunks — Spring AI embeds the question automatically
+    private List&lt;Document&gt; searchVectorStore(String question) {
+<span class="nc" id="L58">        return vectorStore.similaritySearch(</span>
+<span class="nc" id="L59">                SearchRequest.builder()</span>
+<span class="nc" id="L60">                        .query(question)</span>
+<span class="nc" id="L61">                        .topK(TOP_K)</span>
+<span class="nc" id="L62">                        .build()</span>
+        );
+    }
+
+    // join all retrieved document chunks into a single context string with metadata (IMPROVED)
+    private static String buildContext(List&lt;Document&gt; relevantDocs) {
+<span class="nc" id="L68">        return relevantDocs.stream()</span>
+<span class="nc" id="L69">                .map(doc -&gt; {</span>
+
+<span class="nc" id="L71">                    String text = doc.getText();</span>
+
+<span class="nc" id="L73">                    String source = (String) doc.getMetadata().getOrDefault(META_SOURCE, SOURCE_UNKNOWN);</span>
+
+<span class="nc" id="L75">                    String type = (String) doc.getMetadata().getOrDefault(META_TYPE, &quot;UNKNOWN&quot;);</span>
+
+<span class="nc" id="L77">                    String url = (String) doc.getMetadata().getOrDefault(META_URL, &quot;&quot;);</span>
+
+<span class="nc bnc" id="L79" title="All 2 branches missed.">                    return &quot;[SOURCE: &quot; + source + &quot; | TYPE: &quot; + type + (url.isBlank() ? &quot;&quot; : &quot; | URL: &quot; + url) + &quot;]\n&quot; + text;</span>
+                })
+<span class="nc" id="L81">                .collect(Collectors.joining(CONTEXT_SEPARATOR));</span>
+    }
+
+    // send the context and question to OpenAI using system + user prompts
+    // the system prompt enforces context-only answers with a Gen Z British personality
+    private String callChatModel(String context, String question) {
+<span class="nc" id="L87">        return chatClient.prompt(</span>
+<span class="nc" id="L88">                new Prompt(List.of(</span>
+                        new SystemMessage(PromptConstant.SYSTEM_PROMPT),
+<span class="nc" id="L90">                        new UserMessage(String.format(</span>
+                                PromptConstant.USER_PROMPT_TEMPLATE,
+                                context,
+                                question
+                        ))
+                ))
+<span class="nc" id="L96">        ).call().content();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>

@@ -1,0 +1,15 @@
+GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_COVERED,LINE_MISSED,LINE_COVERED,COMPLEXITY_MISSED,COMPLEXITY_COVERED,METHOD_MISSED,METHOD_COVERED
+Owley AI,com.pdfchat.service.impl,OcrServiceImpl,98,0,14,0,25,0,11,0,4,0
+Owley AI,com.pdfchat.service.impl,RagServiceImpl,120,0,4,0,29,0,9,0,7,0
+Owley AI,com.pdfchat.service.impl,CloudinaryServiceImpl,169,0,20,0,37,0,19,0,9,0
+Owley AI,com.pdfchat.service.impl,ImageValidationServiceImpl,106,0,32,0,19,0,19,0,3,0
+Owley AI,com.pdfchat.service.impl,PdfIngestionServiceImpl,0,323,0,14,0,85,0,17,0,10
+Owley AI,com.pdfchat.service.impl,MultiImageIngestionServiceImpl,255,0,18,0,67,0,17,0,8,0
+Owley AI,com.pdfchat,OwleyApplication,8,0,0,0,3,0,2,0,2,0
+Owley AI,com.pdfchat.constants,DocumentIngestionConstant,0,5,0,0,0,1,0,1,0,1
+Owley AI,com.pdfchat.config,CloudinaryConfig,8,0,0,0,2,0,2,0,2,0
+Owley AI,com.pdfchat.config,ChatClientConfig,7,0,0,0,2,0,2,0,2,0
+Owley AI,com.pdfchat.controller,DocumentController,0,33,0,0,0,8,0,5,0,5
+Owley AI,com.pdfchat.controller,GlobalExceptionHandler,18,45,0,0,7,16,1,4,1,4
+Owley AI,com.pdfchat.model,DocumentType,0,15,0,0,0,3,0,1,0,1
+Owley AI,com.pdfchat.model,DocumentStatus,0,24,0,0,0,4,0,1,0,1

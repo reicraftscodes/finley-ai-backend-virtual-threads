@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MultiImageIngestionServiceImpl.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">Owley AI</a> &gt; <a href="index.source.html" class="el_package">com.pdfchat.service.impl</a> &gt; <span class="el_source">MultiImageIngestionServiceImpl.java</span></div><h1>MultiImageIngestionServiceImpl.java</h1><pre class="source lang-java linenums">package com.pdfchat.service.impl;
+
+import com.pdfchat.entity.DocumentEntity;
+import com.pdfchat.model.DocumentStatus;
+import com.pdfchat.model.DocumentType;
+import com.pdfchat.model.UploadResponse;
+import com.pdfchat.repository.DocumentRepository;
+import com.pdfchat.service.CloudinaryService;
+import com.pdfchat.service.ImageValidationService;
+import com.pdfchat.service.MultiImageIngestionService;
+import com.pdfchat.service.OcrService;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static com.pdfchat.constants.DocumentIngestionConstant.*;
+
+<span class="nc" id="L30">@Slf4j</span>
+@Service
+<span class="nc" id="L32">public class MultiImageIngestionServiceImpl implements MultiImageIngestionService {</span>
+
+    @Autowired
+    private VectorStore vectorStore;
+
+    @Autowired
+    private CloudinaryService cloudinaryService;
+
+    @Autowired
+    private DocumentRepository documentRepository;
+
+    @Autowired
+    private OcrService ocrService;
+
+    @Autowired
+    private ImageValidationService imageValidationService;
+
+    @Override
+    public UploadResponse ingestImages(MultipartFile[] files) throws IOException {
+
+        // validate batch request
+<span class="nc" id="L53">        imageValidationService.validateBatch(files);</span>
+
+<span class="nc" id="L55">        LocalDateTime uploadTime = LocalDateTime.now(ZoneId.systemDefault());</span>
+
+<span class="nc" id="L57">        List&lt;Document&gt; allChunks = new ArrayList&lt;&gt;();</span>
+
+<span class="nc" id="L59">        String filename = null;</span>
+<span class="nc" id="L60">        String cloudinaryUrl = null;</span>
+<span class="nc" id="L61">        String cloudinaryPublicId = null;</span>
+
+<span class="nc" id="L63">        TokenTextSplitter splitter = buildTextSplitter();</span>
+
+        // process each image independently
+<span class="nc bnc" id="L66" title="All 2 branches missed.">        for (MultipartFile file : files) {</span>
+
+            // validate individual image
+<span class="nc" id="L69">            imageValidationService.validate(file);</span>
+
+            // sanitize filename
+<span class="nc" id="L72">            filename = sanitizeFilename(file.getOriginalFilename());</span>
+
+            // upload to Cloudinary and get URL
+<span class="nc" id="L75">            cloudinaryPublicId = cloudinaryService.uploadImage(file);</span>
+<span class="nc" id="L76">            cloudinaryUrl = cloudinaryService.getImageUrl(cloudinaryPublicId);</span>
+<span class="nc" id="L77">            log.info(CLOUDINARY_URL_RECEIVED, cloudinaryUrl);</span>
+
+            // extract OCR text per image Spring AI Media
+<span class="nc" id="L80">            String ocrText = ocrService.extractText(file);</span>
+
+            // skip image if no text extracted
+<span class="nc bnc" id="L83" title="All 4 branches missed.">            if (ocrText == null || ocrText.isBlank()) {</span>
+<span class="nc" id="L84">                log.warn(&quot;No OCR text extracted from: {}&quot;, filename);</span>
+<span class="nc" id="L85">                continue;</span>
+            }
+
+            // trim per image to stay within safe token range
+<span class="nc" id="L89">            ocrText = trimText(ocrText, 4000);</span>
+
+            // wrap OCR text in a Spring AI Document with metadata
+<span class="nc" id="L92">            Document doc = new Document(ocrText, Map.of(</span>
+                    &quot;source&quot;, filename,
+                    &quot;cloudinary_url&quot;, cloudinaryUrl,
+                    &quot;type&quot;, &quot;IMAGE&quot;
+            ));
+
+            // chunk this image's text independently — prevents cross-image token bleed
+<span class="nc" id="L99">            allChunks.addAll(splitter.apply(List.of(doc)));</span>
+        }
+
+        // create DB record with PROCESSING status
+<span class="nc" id="L103">        DocumentEntity docRecord = createDocumentRecord(</span>
+                filename, cloudinaryPublicId, cloudinaryUrl, uploadTime
+        );
+
+        // clear previous vectors
+<span class="nc" id="L108">        clearExistingVectors();</span>
+
+        // fail if no usable text from any image
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        if (allChunks.isEmpty()) {</span>
+<span class="nc" id="L112">            docRecord.setStatus(DocumentStatus.FAILED);</span>
+<span class="nc" id="L113">            documentRepository.save(docRecord);</span>
+<span class="nc" id="L114">            throw new IllegalArgumentException(NO_TEXT_FOUND_MESSAGE);</span>
+        }
+
+        // store chunks in vector store
+<span class="nc" id="L118">        vectorStore.add(allChunks);</span>
+<span class="nc" id="L119">        log.info(CHUNKS_INDEXED, allChunks.size(), filename);</span>
+
+        // mark complete
+<span class="nc" id="L122">        docRecord.setStatus(DocumentStatus.READY);</span>
+<span class="nc" id="L123">        documentRepository.save(docRecord);</span>
+
+<span class="nc" id="L125">        return UploadResponse.builder()</span>
+<span class="nc" id="L126">                .status(UPLOAD_RESULT_SUCCESS)</span>
+<span class="nc" id="L127">                .indexedChunks(allChunks.size())</span>
+<span class="nc" id="L128">                .file(filename)</span>
+<span class="nc" id="L129">                .uploadTime(uploadTime)</span>
+<span class="nc" id="L130">                .build();</span>
+    }
+
+    // build text splitter
+    private static TokenTextSplitter buildTextSplitter() {
+<span class="nc" id="L135">        return TokenTextSplitter.builder()</span>
+<span class="nc" id="L136">                .withChunkSize(512)</span>
+<span class="nc" id="L137">                .withMinChunkSizeChars(50)</span>
+<span class="nc" id="L138">                .build();</span>
+    }
+
+    // create DB record
+    private DocumentEntity createDocumentRecord(String filename, String cloudinaryPublicId, String cloudinaryUrl, LocalDateTime uploadTime) {
+<span class="nc" id="L143">        DocumentEntity doc = new DocumentEntity();</span>
+<span class="nc" id="L144">        doc.setFilename(filename);</span>
+<span class="nc" id="L145">        doc.setType(DocumentType.IMAGE);</span>
+<span class="nc" id="L146">        doc.setContentType(&quot;image&quot;);</span>
+<span class="nc" id="L147">        doc.setCloudinaryPublicId(cloudinaryPublicId);</span>
+<span class="nc" id="L148">        doc.setCloudinaryUrl(cloudinaryUrl);</span>
+<span class="nc" id="L149">        doc.setStatus(DocumentStatus.PROCESSING);</span>
+<span class="nc" id="L150">        doc.setUploadTime(uploadTime);</span>
+
+<span class="nc" id="L152">        return documentRepository.save(doc);</span>
+    }
+
+    // clear vectors
+    private void clearExistingVectors() {
+<span class="nc" id="L157">        List&lt;Document&gt; existing = vectorStore.similaritySearch(</span>
+<span class="nc" id="L158">                SearchRequest.builder()</span>
+<span class="nc" id="L159">                        .query(&quot; &quot;)</span>
+<span class="nc" id="L160">                        .topK(1000)</span>
+<span class="nc" id="L161">                        .build()</span>
+        );
+
+<span class="nc bnc" id="L164" title="All 2 branches missed.">        if (!existing.isEmpty()) {</span>
+<span class="nc" id="L165">            vectorStore.delete(existing.stream().map(Document::getId).toList());</span>
+<span class="nc" id="L166">            log.info(VECTORS_CLEARED, existing.size());</span>
+        }
+<span class="nc" id="L168">    }</span>
+
+    // sanitize filename
+    private String sanitizeFilename(String name) {
+<span class="nc bnc" id="L172" title="All 4 branches missed.">        if (name == null || name.isBlank()) {</span>
+<span class="nc" id="L173">            return DEFAULT_FILENAME;</span>
+        }
+<span class="nc" id="L175">        return name.replaceAll(FILENAME_SANITIZE_REGEX, FILENAME_REPLACEMENT);</span>
+    }
+
+    // trim OCR text safely
+    private String trimText(String text, int maxChars) {
+<span class="nc bnc" id="L180" title="All 4 branches missed.">        if (text == null || text.isBlank()) {</span>
+<span class="nc" id="L181">            return &quot;&quot;;</span>
+        }
+
+<span class="nc" id="L184">        int endIndex = Math.min(text.length(), maxChars);</span>
+
+<span class="nc" id="L186">        return text.substring(0, endIndex);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.12.202403310830</span></div></body></html>
