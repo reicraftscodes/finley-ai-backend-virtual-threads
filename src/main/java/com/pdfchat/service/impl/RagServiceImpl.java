@@ -53,7 +53,7 @@ public class RagServiceImpl implements RagService {
                 .build();
     }
 
-    // search Pinecone for the most relevant chunks — Spring AI embeds the question automatically
+    // search Pinecone for the most relevant chunks Spring AI embeds the question automatically
     private List<Document> searchVectorStore(String question) {
         return vectorStore.similaritySearch(
                 SearchRequest.builder()
@@ -63,7 +63,7 @@ public class RagServiceImpl implements RagService {
         );
     }
 
-    // join all retrieved document chunks into a single context string with metadata (IMPROVED)
+    // join all retrieved document chunks into a single context string with metadata
     private static String buildContext(List<Document> relevantDocs) {
         return relevantDocs.stream()
                 .map(doc -> {
@@ -82,7 +82,7 @@ public class RagServiceImpl implements RagService {
     }
 
     // send the context and question to OpenAI using system + user prompts
-    // the system prompt enforces context-only answers with a Gen Z British personality
+    // the system prompt enforces context-only answers
     private String callChatModel(String context, String question) {
         return chatClient.prompt(
                 new Prompt(List.of(
