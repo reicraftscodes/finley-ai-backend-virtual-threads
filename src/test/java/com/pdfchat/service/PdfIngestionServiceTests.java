@@ -45,7 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-public class PdfIngestionServiceTests {
+class PdfIngestionServiceTests {
 
     private static final String TEST_FILE = "unit-test-policy.pdf";
     private static final String TEST_FILE_WITH_SPACES = "unit-test policy (1).pdf";
